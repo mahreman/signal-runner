@@ -1,0 +1,26 @@
+:root {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color: #f6f7fb;
+  background-color: #04050a;
+}
+
+* {
+  box-sizing: border-box;
+  touch-action: none;
+}
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(180deg, #05050d 0%, #04050a 60%, #010104 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#gameCanvas {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
