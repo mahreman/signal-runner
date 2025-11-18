@@ -1,20 +1,19 @@
 import {
-  BACKGROUND_COLOR,
   BASE_SCORE_GAIN,
   MAX_DISTANCE_RATIO,
-  ACCURACY_THRESHOLD,
-  DAMAGE_PER_SECOND,
-  ENERGY_REGEN_PER_SECOND,
-  PLAYER_VERTICAL_RATIO,
+  BACKGROUND_COLOR,
+  PLAYER_Y_RATIO,
 } from './config.js';
 import { fetchKlines } from './binance.js';
 import { klinesToTrackPoints } from './dataTransform.js';
 import { initTrack, updateTrack, drawTrack, getXAtY, resetTrackOffset } from './track.js';
 import {
   initPlayer,
-  getPlayerState,
-  setPlayerTargetX,
+  setTargetX,
   updatePlayer,
+  applyDistanceAndUpdateEnergy,
+  getEnergy,
+  getPlayer,
   drawPlayer,
 } from './player.js';
 import { setupInput } from './input.js';
@@ -23,99 +22,93 @@ import { drawHUD } from './ui.js';
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+let logicalWidth = window.innerWidth;
+let logicalHeight = window.innerHeight;
+let lastTime = 0;
 let state = 'LOADING';
-let lastTimestamp = 0;
 let score = 0;
-let viewportWidth = window.innerWidth || 360;
-let viewportHeight = window.innerHeight || 640;
-let klinesCache = [];
+let errorMessage = '';
+let cachedKlines = [];
+let cachedPoints = [];
 
 resizeCanvas();
-setupInputHandlers();
-loadData();
-requestAnimationFrame(gameLoop);
 window.addEventListener('resize', () => {
   resizeCanvas();
-  rebuildTrack();
+  rebuildFromCache();
 });
 
-function setupInputHandlers() {
-  setupInput(
-    canvas,
-    (x) => {
-      setPlayerTargetX(x, viewportWidth);
-    },
-    () => {
-      if (state === 'READY' || state === 'GAME_OVER') {
-        startRun();
-      }
-    },
-  );
-}
+setupInput(canvas, (x) => {
+  setTargetX(x);
+});
+canvas.addEventListener('pointerdown', handleTap, { passive: false });
 
-async function loadData() {
+init();
+requestAnimationFrame(loop);
+
+async function init() {
+  state = 'LOADING';
   try {
     const klines = await fetchKlines('BTCUSDT', '1m', 1000);
-    klinesCache = klines;
+    cachedKlines = klines;
+    cachedPoints = klinesToTrackPoints(klines, logicalWidth, logicalHeight);
+    initTrack(cachedPoints, logicalWidth, logicalHeight);
+    const startX = cachedPoints.length ? cachedPoints[cachedPoints.length - 1].x : logicalWidth / 2;
+    const playerY = logicalHeight * PLAYER_Y_RATIO;
+    initPlayer(startX, playerY, logicalWidth);
+    state = 'READY';
   } catch (error) {
-    console.warn('Binance verisi alınamadı, fallback kullanılacak.', error);
-    klinesCache = generateFallbackKlines(600);
+    console.error(error);
+    errorMessage = 'Binance verisi alınamadı.';
+    state = 'ERROR';
   }
-  rebuildTrack();
-  state = 'READY';
 }
 
-function rebuildTrack() {
-  if (!klinesCache.length || !viewportWidth || !viewportHeight) {
-    return;
+function rebuildFromCache() {
+  if (!cachedKlines.length) return;
+  cachedPoints = klinesToTrackPoints(cachedKlines, logicalWidth, logicalHeight);
+  initTrack(cachedPoints, logicalWidth, logicalHeight);
+  const playerY = logicalHeight * PLAYER_Y_RATIO;
+  initPlayer(logicalWidth / 2, playerY, logicalWidth);
+  if (state === 'RUNNING') {
+    state = 'READY';
   }
-  const prevPlayer = { ...getPlayerState() };
-  const points = klinesToTrackPoints(klinesCache, viewportWidth, viewportHeight);
-  initTrack(points, viewportWidth, viewportHeight);
-  initPlayer(viewportWidth, viewportHeight);
-  const player = getPlayerState();
-  if (prevPlayer.x && prevPlayer.canvasWidth) {
-    const ratio = prevPlayer.x / prevPlayer.canvasWidth;
-    player.x = ratio * viewportWidth;
-    player.targetX = player.x;
+}
+
+function handleTap(event) {
+  if (state === 'READY' || state === 'GAME_OVER') {
+    event.preventDefault();
+    startRun();
   }
-  player.energy = prevPlayer.energy ?? 100;
-  player.y = viewportHeight * PLAYER_VERTICAL_RATIO;
 }
 
 function startRun() {
-  resetTrackOffset();
-  initPlayer(viewportWidth, viewportHeight);
-  const player = getPlayerState();
-  player.energy = 100;
   score = 0;
+  resetTrackOffset();
+  const playerY = logicalHeight * PLAYER_Y_RATIO;
+  initPlayer(logicalWidth / 2, playerY, logicalWidth);
   state = 'RUNNING';
 }
 
 function update(dt) {
-  if (state !== 'RUNNING') {
+  if (state !== 'RUNNING') return;
+
+  updateTrack(dt);
+  updatePlayer(dt, logicalWidth);
+  const player = getPlayer();
+  const idealX = getXAtY(player.y);
+  if (idealX == null) {
+    state = 'GAME_OVER';
     return;
   }
-  updateTrack(dt);
-  updatePlayer(dt);
-  const player = getPlayerState();
-  const idealX = getXAtY(player.y);
-  const maxDistance = Math.max(1, viewportWidth * MAX_DISTANCE_RATIO);
+
+  const maxDistance = Math.max(1, logicalWidth * MAX_DISTANCE_RATIO);
   const distance = Math.abs(player.x - idealX);
-  const distanceRatio = Math.min(distance / maxDistance, 1);
-  const accuracy = 1 - distanceRatio;
-  score += BASE_SCORE_GAIN * dt * accuracy;
+  const distanceRatio = Math.max(0, Math.min(1, distance / maxDistance));
 
-  if (distanceRatio > ACCURACY_THRESHOLD) {
-    const over = distanceRatio - ACCURACY_THRESHOLD;
-    const normalizedOver = over / (1 - ACCURACY_THRESHOLD);
-    player.energy -= DAMAGE_PER_SECOND * dt * normalizedOver;
-  } else {
-    player.energy = Math.min(100, player.energy + ENERGY_REGEN_PER_SECOND * dt);
-  }
+  score += BASE_SCORE_GAIN * dt * (1 - distanceRatio);
+  applyDistanceAndUpdateEnergy(distanceRatio, dt);
 
-  if (player.energy <= 0) {
-    player.energy = 0;
+  if (getEnergy() <= 0) {
     state = 'GAME_OVER';
   }
 }
@@ -123,53 +116,36 @@ function update(dt) {
 function draw() {
   ctx.save();
   ctx.fillStyle = BACKGROUND_COLOR;
-  ctx.fillRect(0, 0, viewportWidth, viewportHeight);
-  drawTrack(ctx, viewportWidth, viewportHeight);
+  ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+  drawTrack(ctx, logicalWidth, logicalHeight);
   drawPlayer(ctx);
-  const player = getPlayerState();
-  drawHUD(ctx, viewportWidth, viewportHeight, { score, energy: player.energy, state });
+  drawHUD(ctx, logicalWidth, logicalHeight, score, getEnergy(), state);
+  if (state === 'ERROR') {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(errorMessage, logicalWidth / 2, logicalHeight * 0.7);
+  }
   ctx.restore();
 }
 
-function gameLoop(timestamp) {
-  const dt = Math.min(0.033, (timestamp - lastTimestamp) / 1000 || 0);
-  lastTimestamp = timestamp;
+function loop(timestamp) {
+  const dt = Math.min(0.05, (timestamp - lastTime) / 1000 || 0);
+  lastTime = timestamp;
   update(dt);
   draw();
-  requestAnimationFrame(gameLoop);
+  requestAnimationFrame(loop);
 }
 
 function resizeCanvas() {
-  const width = window.innerWidth || document.documentElement.clientWidth || 360;
-  const height = window.innerHeight || document.documentElement.clientHeight || 640;
-  viewportWidth = width;
-  viewportHeight = height;
+  logicalWidth = window.innerWidth || document.documentElement.clientWidth || 360;
+  logicalHeight = window.innerHeight || document.documentElement.clientHeight || 640;
   const dpr = window.devicePixelRatio || 1;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  canvas.style.width = `${logicalWidth}px`;
+  canvas.style.height = `${logicalHeight}px`;
+  canvas.width = logicalWidth * dpr;
+  canvas.height = logicalHeight * dpr;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
-}
-
-function generateFallbackKlines(count) {
-  const now = Date.now();
-  const result = [];
-  let value = 25000;
-  for (let i = 0; i < count; i += 1) {
-    const wave = Math.sin(i * 0.05) * 200 + Math.cos(i * 0.013) * 120;
-    value += wave * 0.02;
-    const close = value;
-    result.push({
-      openTime: now - (count - i) * 60000,
-      open: close,
-      high: close + 50,
-      low: close - 50,
-      close,
-      volume: 1,
-      closeTime: now - (count - i - 1) * 60000,
-    });
-  }
-  return result;
 }

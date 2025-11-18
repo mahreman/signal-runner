@@ -3,14 +3,15 @@ import { TRACK_SCROLL_SPEED, TRACK_LINE_COLOR, TRACK_LINE_WIDTH } from './config
 const trackState = {
   points: [],
   scrollOffset: 0,
-  canvasHeight: 1,
+  width: 0,
+  height: 0,
 };
 
-// Track verisini hazırlar ve başlangıç offset'ini sıfırlar.
-export function initTrack(points, canvasWidth, canvasHeight) {
-  trackState.points = points;
+export function initTrack(trackPoints, canvasWidth, canvasHeight) {
+  trackState.points = trackPoints.slice();
   trackState.scrollOffset = 0;
-  trackState.canvasHeight = canvasHeight || 1;
+  trackState.width = canvasWidth;
+  trackState.height = canvasHeight;
 }
 
 export function resetTrackOffset() {
@@ -18,60 +19,72 @@ export function resetTrackOffset() {
 }
 
 export function updateTrack(dt) {
-  if (!trackState.points.length) {
-    return;
-  }
+  if (!trackState.points.length) return;
   trackState.scrollOffset += TRACK_SCROLL_SPEED * dt;
-  if (trackState.scrollOffset > trackState.canvasHeight) {
-    trackState.scrollOffset -= trackState.canvasHeight;
+  if (trackState.scrollOffset > trackState.height) {
+    trackState.scrollOffset -= trackState.height;
   }
-}
-
-function sampleX(normalized) {
-  if (!trackState.points.length) {
-    return 0;
-  }
-  const clamped = ((normalized % 1) + 1) % 1;
-  const position = clamped * (trackState.points.length - 1);
-  const index = Math.floor(position);
-  const frac = position - index;
-  const p1 = trackState.points[index];
-  const p2 = trackState.points[Math.min(index + 1, trackState.points.length - 1)];
-  return p1.x + (p2.x - p1.x) * frac;
-}
-
-export function getXAtY(y) {
-  if (!trackState.points.length) {
-    return 0;
-  }
-  const totalHeight = trackState.canvasHeight;
-  const worldY = y + trackState.scrollOffset;
-  const normalized = (worldY / totalHeight) % 1;
-  return sampleX(normalized);
 }
 
 export function drawTrack(ctx, canvasWidth, canvasHeight) {
-  if (!trackState.points.length) {
-    return;
-  }
+  if (!trackState.points.length) return;
+
   ctx.save();
-  ctx.lineWidth = TRACK_LINE_WIDTH;
   ctx.strokeStyle = TRACK_LINE_COLOR;
+  ctx.lineWidth = TRACK_LINE_WIDTH;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.beginPath();
-  const steps = 240;
-  for (let i = 0; i <= steps; i += 1) {
-    const screenY = (i / steps) * canvasHeight;
-    const worldY = screenY + trackState.scrollOffset;
-    const normalized = (worldY / trackState.canvasHeight) % 1;
-    const x = sampleX(normalized);
-    if (i === 0) {
-      ctx.moveTo(x, screenY);
-    } else {
-      ctx.lineTo(x, screenY);
+
+  let started = false;
+  let previousY = 0;
+  for (let i = 0; i < trackState.points.length; i += 1) {
+    const basePoint = trackState.points[i];
+    let wrappedY = basePoint.y + trackState.scrollOffset;
+    wrappedY %= canvasHeight;
+    if (wrappedY < 0) {
+      wrappedY += canvasHeight;
     }
+
+    if (!started) {
+      ctx.moveTo(basePoint.x, wrappedY);
+      started = true;
+    } else if (wrappedY < previousY) {
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(basePoint.x, wrappedY);
+    } else {
+      ctx.lineTo(basePoint.x, wrappedY);
+    }
+    previousY = wrappedY;
   }
+
   ctx.stroke();
   ctx.restore();
+}
+
+export function getXAtY(targetY) {
+  if (!trackState.points.length) {
+    return null;
+  }
+
+  const height = trackState.height || 1;
+  let wrappedY = targetY + trackState.scrollOffset;
+  wrappedY %= height;
+  if (wrappedY < 0) {
+    wrappedY += height;
+  }
+
+  for (let i = 0; i < trackState.points.length - 1; i += 1) {
+    const a = trackState.points[i];
+    const b = trackState.points[i + 1];
+
+    if ((a.y >= wrappedY && b.y <= wrappedY) || (a.y <= wrappedY && b.y >= wrappedY)) {
+      const range = b.y - a.y || 1;
+      const t = (wrappedY - a.y) / range;
+      return a.x + (b.x - a.x) * t;
+    }
+  }
+
+  return trackState.points[trackState.points.length - 1].x;
 }

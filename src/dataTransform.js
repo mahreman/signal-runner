@@ -1,23 +1,18 @@
-// Kline verisini ekranda kullanılacak polylinelara dönüştürür.
 export function klinesToTrackPoints(klines, canvasWidth, canvasHeight) {
-  if (!klines.length) {
+  if (!Array.isArray(klines) || !klines.length) {
     return [];
   }
 
   const closes = klines.map((k) => k.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const count = closes.length;
+  const minClose = Math.min(...closes);
+  const maxClose = Math.max(...closes);
+  const range = maxClose - minClose + 1e-9;
+  const lastIndex = klines.length - 1;
 
-  return closes.map((close, index) => {
-    const priceNorm = (close - min) / range;
-    const t = count > 1 ? index / (count - 1) : 0;
-    return {
-      x: priceNorm * canvasWidth,
-      y: t * canvasHeight,
-      t,
-      close,
-    };
+  return klines.map((kline, index) => {
+    const normalizedX = (kline.close - minClose) / range;
+    const x = normalizedX * canvasWidth;
+    const y = canvasHeight - (index / (lastIndex || 1)) * canvasHeight;
+    return { x, y, close: kline.close };
   });
 }

@@ -1,21 +1,21 @@
 import { HUD_TEXT_COLOR, ENERGY_BAR_BG, ENERGY_BAR_FILL, OVERLAY_BG } from './config.js';
 
-export function drawHUD(ctx, width, height, { score, energy, state }) {
+export function drawHUD(ctx, width, height, score, energy, state) {
   ctx.save();
   ctx.fillStyle = HUD_TEXT_COLOR;
-  ctx.font = '600 20px "Inter", "Segoe UI", sans-serif';
+  ctx.font = '600 20px "Inter", "Segoe UI", system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`Score: ${score.toFixed(0)}`, 16, 32);
+  ctx.textBaseline = 'top';
+  ctx.fillText(`Score: ${Math.floor(score)}`, 16, 16);
 
-  // Enerji barı
   const barWidth = width - 32;
-  const barHeight = 14;
+  const barHeight = 12;
   const barX = 16;
-  const barY = 46;
+  const barY = 44;
   ctx.fillStyle = ENERGY_BAR_BG;
   ctx.fillRect(barX, barY, barWidth, barHeight);
   ctx.fillStyle = ENERGY_BAR_FILL;
-  ctx.fillRect(barX, barY, (barWidth * Math.max(energy, 0)) / 100, barHeight);
+  ctx.fillRect(barX, barY, (barWidth * Math.max(0, Math.min(100, energy))) / 100, barHeight);
   ctx.strokeStyle = HUD_TEXT_COLOR;
   ctx.lineWidth = 2;
   ctx.strokeRect(barX, barY, barWidth, barHeight);
@@ -25,29 +25,29 @@ export function drawHUD(ctx, width, height, { score, energy, state }) {
 }
 
 function drawOverlay(ctx, width, height, state, score) {
-  let message = '';
+  let lines = [];
   if (state === 'LOADING') {
-    message = 'Loading data…';
+    lines = ['Loading data…'];
   } else if (state === 'READY') {
-    message = 'Tap to start';
+    lines = ['Tap to start'];
   } else if (state === 'GAME_OVER') {
-    message = `Game Over\nScore: ${score.toFixed(0)}\nTap to restart`;
+    lines = ['Game Over', `Score: ${Math.floor(score)}`, 'Tap to restart'];
+  } else if (state === 'ERROR') {
+    lines = ['Data error', 'Retry later'];
   }
 
-  if (!message) {
-    return;
-  }
+  if (!lines.length) return;
 
   ctx.save();
   ctx.fillStyle = OVERLAY_BG;
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = HUD_TEXT_COLOR;
-  ctx.font = '700 28px "Inter", "Segoe UI", sans-serif';
+  ctx.font = '700 26px "Inter", "Segoe UI", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  message.split('\n').forEach((line, index, arr) => {
-    const y = height / 2 + (index - (arr.length - 1) / 2) * 34;
-    ctx.fillText(line, width / 2, y);
+  lines.forEach((line, index) => {
+    const offset = (index - (lines.length - 1) / 2) * 34;
+    ctx.fillText(line, width / 2, height / 2 + offset);
   });
   ctx.restore();
 }
