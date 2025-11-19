@@ -9,6 +9,9 @@ import {
 
 const TRAIL_MAX_POINTS = 12;
 
+  PLAYER_COLOR,
+} from './config.js';
+
 const playerState = {
   x: 0,
   y: 0,
@@ -128,6 +131,11 @@ function drawOrb(ctx) {
   ctx.fillStyle = highlight;
   ctx.beginPath();
   ctx.arc(playerState.x, playerState.y, playerState.radius * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.fillStyle = PLAYER_COLOR;
+  ctx.beginPath();
+  ctx.arc(playerState.x, playerState.y, playerState.radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
