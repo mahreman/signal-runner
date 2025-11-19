@@ -5,6 +5,10 @@ import {
   DISTANCE_THRESHOLD,
   PLAYER_LERP_SPEED,
   PLAYER_RADIUS_MIN,
+} from './config.js';
+
+const TRAIL_MAX_POINTS = 12;
+
   PLAYER_COLOR,
 } from './config.js';
 
@@ -15,6 +19,7 @@ const playerState = {
   energy: ENERGY_MAX,
   targetX: 0,
   boundsWidth: 0,
+  trail: [],
 };
 
 export function initPlayer(startX, yPos, canvasWidth) {
@@ -24,6 +29,7 @@ export function initPlayer(startX, yPos, canvasWidth) {
   playerState.y = yPos;
   playerState.targetX = startX;
   playerState.energy = ENERGY_MAX;
+  playerState.trail = [];
 }
 
 export function setTargetX(newTargetX) {
@@ -44,6 +50,11 @@ export function updatePlayer(dt, canvasWidth) {
     playerState.x = playerState.targetX;
   } else {
     playerState.x += Math.sign(delta) * maxStep;
+  }
+
+  playerState.trail.push({ x: playerState.x, y: playerState.y });
+  if (playerState.trail.length > TRAIL_MAX_POINTS) {
+    playerState.trail.shift();
   }
 }
 
@@ -66,6 +77,61 @@ export function getPlayer() {
 }
 
 export function drawPlayer(ctx) {
+  drawTrail(ctx);
+  drawShadow(ctx);
+  drawOrb(ctx);
+}
+
+function drawTrail(ctx) {
+  if (!playerState.trail.length) return;
+  ctx.save();
+  playerState.trail.forEach((point, index) => {
+    const progress = index / playerState.trail.length;
+    const alpha = progress * 0.4;
+    const radius = Math.max(1, playerState.radius * progress * 0.5);
+    ctx.fillStyle = `rgba(255, 214, 107, ${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawShadow(ctx) {
+  ctx.save();
+  ctx.translate(playerState.x, playerState.y + playerState.radius * 0.9);
+  ctx.scale(1.8, 0.6);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  ctx.arc(0, 0, playerState.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawOrb(ctx) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(255, 230, 150, 0.9)';
+  ctx.shadowBlur = 25;
+  ctx.fillStyle = '#ffd66b';
+  ctx.beginPath();
+  ctx.arc(playerState.x, playerState.y, playerState.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  const highlight = ctx.createRadialGradient(
+    playerState.x - playerState.radius * 0.3,
+    playerState.y - playerState.radius * 0.4,
+    playerState.radius * 0.2,
+    playerState.x,
+    playerState.y,
+    playerState.radius
+  );
+  highlight.addColorStop(0, '#fff8dc');
+  highlight.addColorStop(0.4, '#ffe59b');
+  highlight.addColorStop(1, 'rgba(255, 214, 107, 0)');
+  ctx.fillStyle = highlight;
+  ctx.beginPath();
+  ctx.arc(playerState.x, playerState.y, playerState.radius * 1.2, 0, Math.PI * 2);
+  ctx.fill();
   ctx.save();
   ctx.fillStyle = PLAYER_COLOR;
   ctx.beginPath();
